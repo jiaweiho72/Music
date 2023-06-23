@@ -39,6 +39,7 @@
 
 #import <objc/runtime.h>
 
+using namespace facebook;
 using namespace facebook::react;
 
 // Allow JS runtime to register native components as needed. For static view configs.
@@ -71,12 +72,7 @@ static Class<RCTComponentViewProtocol> RCTComponentViewClassWithName(const char 
   dispatch_once(&onceToken, ^{
     componentViewFactory = [RCTComponentViewFactory new];
     [componentViewFactory registerComponentViewClass:[RCTRootComponentView class]];
-    [componentViewFactory registerComponentViewClass:[RCTViewComponentView class]];
     [componentViewFactory registerComponentViewClass:[RCTParagraphComponentView class]];
-    [componentViewFactory registerComponentViewClass:[RCTTextInputComponentView class]];
-
-    Class<RCTComponentViewProtocol> imageClass = RCTComponentViewClassWithName("Image");
-    [componentViewFactory registerComponentViewClass:imageClass];
 
     componentViewFactory->_providerRegistry.setComponentDescriptorProviderRequest(
         [](ComponentName requestedComponentName) {
@@ -95,9 +91,9 @@ static Class<RCTComponentViewProtocol> RCTComponentViewClassWithName(const char 
   {
     .viewClass = viewClass,
     .observesMountingTransactionWillMount =
-        (bool)class_respondsToSelector(viewClass, @selector(mountingTransactionWillMountWithMetadata:)),
+        (bool)class_respondsToSelector(viewClass, @selector(mountingTransactionWillMount:withSurfaceTelemetry:)),
     .observesMountingTransactionDidMount =
-        (bool)class_respondsToSelector(viewClass, @selector(mountingTransactionDidMountWithMetadata:)),
+        (bool)class_respondsToSelector(viewClass, @selector(mountingTransactionDidMount:withSurfaceTelemetry:)),
   };
 #pragma clang diagnostic pop
 }
@@ -117,7 +113,16 @@ static Class<RCTComponentViewProtocol> RCTComponentViewClassWithName(const char 
   }
 
   // Fallback 2: Try to use Paper Interop.
-  if ([RCTLegacyViewManagerInteropComponentView isSupported:RCTNSStringFromString(name)]) {
+  NSString *componentNameString = RCTNSStringFromString(name);
+  if ([RCTLegacyViewManagerInteropComponentView isSupported:componentNameString]) {
+    RCTLogNewArchitectureValidation(
+        RCTNotAllowedInBridgeless,
+        self,
+        [NSString
+            stringWithFormat:
+                @"Legacy ViewManagers should be migrated to Fabric ComponentViews in the new architecture to reduce risk. Component using interop layer: %@",
+                componentNameString]);
+
     auto flavor = std::make_shared<std::string const>(name);
     auto componentName = ComponentName{flavor->c_str()};
     auto componentHandle = reinterpret_cast<ComponentHandle>(componentName);

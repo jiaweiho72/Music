@@ -42,7 +42,7 @@ using namespace facebook::react;
   return self;
 }
 
-- (facebook::react::SharedProps)props
+- (facebook::react::Props::Shared)props
 {
   return _props;
 }
@@ -296,6 +296,12 @@ using namespace facebook::react;
     self.accessibilityElement.accessibilityLabel = RCTNSStringFromStringNilIfEmpty(newViewProps.accessibilityLabel);
   }
 
+  // `accessibilityLanguage`
+  if (oldViewProps.accessibilityLanguage != newViewProps.accessibilityLanguage) {
+    self.accessibilityElement.accessibilityLanguage =
+        RCTNSStringFromStringNilIfEmpty(newViewProps.accessibilityLanguage);
+  }
+
   // `accessibilityHint`
   if (oldViewProps.accessibilityHint != newViewProps.accessibilityHint) {
     self.accessibilityElement.accessibilityHint = RCTNSStringFromStringNilIfEmpty(newViewProps.accessibilityHint);
@@ -335,12 +341,12 @@ using namespace facebook::react;
 
   // `accessibilityValue`
   if (oldViewProps.accessibilityValue != newViewProps.accessibilityValue) {
-    if (newViewProps.accessibilityValue.text.hasValue()) {
+    if (newViewProps.accessibilityValue.text.has_value()) {
       self.accessibilityElement.accessibilityValue =
           RCTNSStringFromStringNilIfEmpty(newViewProps.accessibilityValue.text.value());
     } else if (
-        newViewProps.accessibilityValue.now.hasValue() && newViewProps.accessibilityValue.min.hasValue() &&
-        newViewProps.accessibilityValue.max.hasValue()) {
+        newViewProps.accessibilityValue.now.has_value() && newViewProps.accessibilityValue.min.has_value() &&
+        newViewProps.accessibilityValue.max.has_value()) {
       CGFloat val = (CGFloat)(newViewProps.accessibilityValue.now.value()) /
           (newViewProps.accessibilityValue.max.value() - newViewProps.accessibilityValue.min.value());
       self.accessibilityElement.accessibilityValue =
@@ -510,6 +516,18 @@ static void RCTReleaseRCTBorderColors(RCTBorderColors borderColors)
   CGColorRelease(borderColors.right);
 }
 
+static CALayerCornerCurve CornerCurveFromBorderCurve(BorderCurve borderCurve)
+{
+  // The constants are available only starting from iOS 13
+  // CALayerCornerCurve is a typealias on NSString *
+  switch (borderCurve) {
+    case BorderCurve::Continuous:
+      return @"continuous"; // kCACornerCurveContinuous;
+    case BorderCurve::Circular:
+      return @"circular"; // kCACornerCurveCircular;
+  }
+}
+
 static RCTBorderStyle RCTBorderStyleFromBorderStyle(BorderStyle borderStyle)
 {
   switch (borderStyle) {
@@ -574,6 +592,9 @@ static RCTBorderStyle RCTBorderStyleFromBorderStyle(BorderStyle borderStyle)
     layer.borderColor = borderColor;
     CGColorRelease(borderColor);
     layer.cornerRadius = (CGFloat)borderMetrics.borderRadii.topLeft;
+    if (@available(iOS 13.0, *)) {
+      layer.cornerCurve = CornerCurveFromBorderCurve(borderMetrics.borderCurves.topLeft);
+    }
     layer.backgroundColor = _backgroundColor.CGColor;
   } else {
     if (!_borderLayer) {

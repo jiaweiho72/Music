@@ -36,15 +36,6 @@ class SchedulerDelegateProxy : public SchedulerDelegate {
     // This delegate method is not currently used on iOS.
   }
 
-  void schedulerDidCloneShadowNode(
-      SurfaceId surfaceId,
-      const ShadowNode &oldShadowNode,
-      const ShadowNode &newShadowNode) override
-  {
-    // Does nothing.
-    // This delegate method is not currently used on iOS.
-  }
-
   void schedulerDidDispatchCommand(
       const ShadowView &shadowView,
       const std::string &commandName,
@@ -191,6 +182,21 @@ class LayoutAnimationDelegateProxy : public LayoutAnimationStatusDelegate, publi
   if (_uiRunLoopObserver) {
     _uiRunLoopObserver->disable();
   }
+}
+
+- (void)addEventListener:(std::shared_ptr<EventListener> const &)listener
+{
+  return _scheduler->addEventListener(listener);
+}
+
+- (void)removeEventListener:(std::shared_ptr<EventListener> const &)listener
+{
+  return _scheduler->removeEventListener(listener);
+}
+
+- (std::shared_ptr<facebook::react::UIManager> const)uiManager
+{
+  return _scheduler->getUIManager();
 }
 
 @end

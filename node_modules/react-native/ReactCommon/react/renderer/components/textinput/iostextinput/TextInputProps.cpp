@@ -12,8 +12,7 @@
 #include <react/renderer/core/propsConversions.h>
 #include <react/renderer/graphics/conversions.h>
 
-namespace facebook {
-namespace react {
+namespace facebook::react {
 
 TextInputProps::TextInputProps(
     const PropsParserContext &context,
@@ -87,7 +86,7 @@ TextInputProps::TextInputProps(
           rawProps,
           "selection",
           sourceProps.selection,
-          butter::optional<Selection>())),
+          std::optional<Selection>())),
       inputAccessoryViewID(convertRawProp(
           context,
           rawProps,
@@ -106,6 +105,15 @@ TextInputProps::TextInputProps(
           "onChangeSync",
           sourceProps.onChangeSync,
           {})){};
+
+void TextInputProps::setProp(
+    const PropsParserContext &context,
+    RawPropsPropNameHash hash,
+    const char *propName,
+    RawValue const &value) {
+  ViewProps::setProp(context, hash, propName, value);
+  BaseTextProps::setProp(context, hash, propName, value);
+}
 
 TextAttributes TextInputProps::getEffectiveTextAttributes(
     Float fontSizeMultiplier) const {
@@ -133,5 +141,4 @@ ParagraphAttributes TextInputProps::getEffectiveParagraphAttributes() const {
   return result;
 }
 
-} // namespace react
-} // namespace facebook
+} // namespace facebook::react

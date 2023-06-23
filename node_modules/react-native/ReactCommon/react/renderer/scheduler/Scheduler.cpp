@@ -17,7 +17,7 @@
 #include <react/renderer/debug/SystraceSection.h>
 #include <react/renderer/mounting/MountingOverrideDelegate.h>
 #include <react/renderer/mounting/ShadowViewMutation.h>
-#include <react/renderer/runtimescheduler/RuntimeSchedulerBinding.h>
+#include <react/renderer/runtimescheduler/RuntimeScheduler.h>
 #include <react/renderer/templateprocessor/UITemplateProcessor.h>
 #include <react/renderer/uimanager/UIManager.h>
 #include <react/renderer/uimanager/UIManagerBinding.h>
@@ -27,8 +27,7 @@
 #include <iostream>
 #endif
 
-namespace facebook {
-namespace react {
+namespace facebook::react {
 
 Scheduler::Scheduler(
     SchedulerToolbox const &schedulerToolbox,
@@ -42,15 +41,21 @@ Scheduler::Scheduler(
           "ReactNativeConfig");
 
   // Creating a container for future `EventDispatcher` instance.
-  eventDispatcher_ =
-      std::make_shared<butter::optional<EventDispatcher const>>();
+  eventDispatcher_ = std::make_shared<std::optional<EventDispatcher const>>();
 
   auto uiManager = std::make_shared<UIManager>(
       runtimeExecutor_, schedulerToolbox.backgroundExecutor, contextContainer_);
   auto eventOwnerBox = std::make_shared<EventBeat::OwnerBox>();
   eventOwnerBox->owner = eventDispatcher_;
 
-  auto eventPipe = [uiManager](
+  auto weakRuntimeScheduler =
+      contextContainer_->find<std::weak_ptr<RuntimeScheduler>>(
+          "RuntimeScheduler");
+  auto runtimeScheduler = weakRuntimeScheduler.has_value()
+      ? weakRuntimeScheduler.value().lock()
+      : nullptr;
+
+  auto eventPipe = [uiManager, runtimeScheduler = runtimeScheduler.get()](
                        jsi::Runtime &runtime,
                        const EventTarget *eventTarget,
                        const std::string &type,
@@ -62,6 +67,9 @@ Scheduler::Scheduler(
               runtime, eventTarget, type, priority, payloadFactory);
         },
         runtime);
+    if (runtimeScheduler != nullptr) {
+      runtimeScheduler->callExpiredTasks(runtime);
+    }
   };
 
   auto statePipe = [uiManager](StateUpdate const &stateUpdate) {
@@ -86,11 +94,13 @@ Scheduler::Scheduler(
   uiManager->setDelegate(this);
   uiManager->setComponentDescriptorRegistry(componentDescriptorRegistry_);
 
-  runtimeExecutor_(
-      [uiManager, runtimeExecutor = runtimeExecutor_](jsi::Runtime &runtime) {
-        UIManagerBinding::createAndInstallIfNeeded(
-            runtime, runtimeExecutor, uiManager);
-      });
+  auto bindingsExecutor =
+      schedulerToolbox.bridgelessBindingsExecutor.has_value()
+      ? schedulerToolbox.bridgelessBindingsExecutor.value()
+      : runtimeExecutor_;
+  bindingsExecutor([uiManager](jsi::Runtime &runtime) {
+    UIManagerBinding::createAndInstallIfNeeded(runtime, uiManager);
+  });
 
   auto componentDescriptorRegistryKey =
       "ComponentDescriptorRegistry_DO_NOT_USE_PRETTY_PLEASE";
@@ -115,8 +125,7 @@ Scheduler::Scheduler(
   uiManager_->setAnimationDelegate(animationDelegate);
 
 #ifdef ANDROID
-  removeOutstandingSurfacesOnDestruction_ = reactNativeConfig_->getBool(
-      "react_fabric:remove_outstanding_surfaces_on_destruction_android");
+  removeOutstandingSurfacesOnDestruction_ = true;
 #else
   removeOutstandingSurfacesOnDestruction_ = reactNativeConfig_->getBool(
       "react_fabric:remove_outstanding_surfaces_on_destruction_ios");
@@ -247,8 +256,8 @@ void Scheduler::renderTemplateToSurface(
                     ShadowNodeFragment{
                         /* .props = */ ShadowNodeFragment::propsPlaceholder(),
                         /* .children = */
-                        std::make_shared<SharedShadowNodeList>(
-                            SharedShadowNodeList{tree}),
+                        std::make_shared<ShadowNode::ListOfShared>(
+                            ShadowNode::ListOfShared{tree}),
                     });
               });
         });
@@ -287,27 +296,16 @@ void Scheduler::uiManagerDidFinishTransaction(
     MountingCoordinator::Shared const &mountingCoordinator) {
   SystraceSection s("Scheduler::uiManagerDidFinishTransaction");
 
-  if (delegate_) {
+  if (delegate_ != nullptr) {
     delegate_->schedulerDidFinishTransaction(mountingCoordinator);
   }
 }
 void Scheduler::uiManagerDidCreateShadowNode(const ShadowNode &shadowNode) {
   SystraceSection s("Scheduler::uiManagerDidCreateShadowNode");
 
-  if (delegate_) {
+  if (delegate_ != nullptr) {
     delegate_->schedulerDidRequestPreliminaryViewAllocation(
         shadowNode.getSurfaceId(), shadowNode);
-  }
-}
-
-void Scheduler::uiManagerDidCloneShadowNode(
-    const ShadowNode &oldShadowNode,
-    const ShadowNode &newShadowNode) {
-  SystraceSection s("Scheduler::uiManagerDidCloneShadowNode");
-
-  if (delegate_) {
-    delegate_->schedulerDidCloneShadowNode(
-        newShadowNode.getSurfaceId(), oldShadowNode, newShadowNode);
   }
 }
 
@@ -317,7 +315,7 @@ void Scheduler::uiManagerDidDispatchCommand(
     folly::dynamic const &args) {
   SystraceSection s("Scheduler::uiManagerDispatchCommand");
 
-  if (delegate_) {
+  if (delegate_ != nullptr) {
     auto shadowView = ShadowView(*shadowNode);
     delegate_->schedulerDidDispatchCommand(shadowView, commandName, args);
   }
@@ -328,7 +326,7 @@ void Scheduler::uiManagerDidSendAccessibilityEvent(
     std::string const &eventType) {
   SystraceSection s("Scheduler::uiManagerDidSendAccessibilityEvent");
 
-  if (delegate_) {
+  if (delegate_ != nullptr) {
     auto shadowView = ShadowView(*shadowNode);
     delegate_->schedulerDidSendAccessibilityEvent(shadowView, eventType);
   }
@@ -341,7 +339,7 @@ void Scheduler::uiManagerDidSetIsJSResponder(
     ShadowNode::Shared const &shadowNode,
     bool isJSResponder,
     bool blockNativeResponder) {
-  if (delegate_) {
+  if (delegate_ != nullptr) {
     delegate_->schedulerDidSetIsJSResponder(
         ShadowView(*shadowNode), isJSResponder, blockNativeResponder);
   }
@@ -351,5 +349,22 @@ ContextContainer::Shared Scheduler::getContextContainer() const {
   return contextContainer_;
 }
 
-} // namespace react
-} // namespace facebook
+std::shared_ptr<UIManager> Scheduler::getUIManager() const {
+  return uiManager_;
+}
+
+void Scheduler::addEventListener(
+    const std::shared_ptr<EventListener const> &listener) {
+  if (eventDispatcher_->has_value()) {
+    eventDispatcher_->value().addListener(listener);
+  }
+}
+
+void Scheduler::removeEventListener(
+    const std::shared_ptr<EventListener const> &listener) {
+  if (eventDispatcher_->has_value()) {
+    eventDispatcher_->value().removeListener(listener);
+  }
+}
+
+} // namespace facebook::react

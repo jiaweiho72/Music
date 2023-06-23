@@ -13,8 +13,7 @@
 #include "RawEvent.h"
 #include "UnbatchedEventQueue.h"
 
-namespace facebook {
-namespace react {
+namespace facebook::react {
 
 EventDispatcher::EventDispatcher(
     EventQueueProcessor const &eventProcessor,
@@ -36,6 +35,10 @@ EventDispatcher::EventDispatcher(
 
 void EventDispatcher::dispatchEvent(RawEvent &&rawEvent, EventPriority priority)
     const {
+  // Allows the event listener to interrupt default event dispatch
+  if (eventListeners_.willDispatchEvent(rawEvent)) {
+    return;
+  }
   getEventQueue(priority).enqueueEvent(std::move(rawEvent));
 }
 
@@ -46,6 +49,10 @@ void EventDispatcher::dispatchStateUpdate(
 }
 
 void EventDispatcher::dispatchUniqueEvent(RawEvent &&rawEvent) const {
+  // Allows the event listener to interrupt default event dispatch
+  if (eventListeners_.willDispatchEvent(rawEvent)) {
+    return;
+  }
   asynchronousBatchedQueue_->enqueueUniqueEvent(std::move(rawEvent));
 }
 
@@ -62,5 +69,17 @@ const EventQueue &EventDispatcher::getEventQueue(EventPriority priority) const {
   }
 }
 
-} // namespace react
-} // namespace facebook
+void EventDispatcher::addListener(
+    const std::shared_ptr<EventListener const> &listener) const {
+  eventListeners_.addListener(listener);
+}
+
+/*
+ * Removes provided event listener to the event dispatcher.
+ */
+void EventDispatcher::removeListener(
+    const std::shared_ptr<EventListener const> &listener) const {
+  eventListeners_.removeListener(listener);
+}
+
+} // namespace facebook::react

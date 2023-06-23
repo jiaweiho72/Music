@@ -9,25 +9,25 @@
  * @generate-docs
  */
 
-import Platform from '../../Utilities/Platform';
-import * as React from 'react';
-import StyleSheet from '../../StyleSheet/StyleSheet';
-import useMergeRefs from '../../Utilities/useMergeRefs';
+import type {ColorValue} from '../../StyleSheet/StyleSheet';
+import type {SyntheticEvent} from '../../Types/CoreEventTypes';
+import type {ViewProps} from '../View/ViewPropTypes';
 
+import StyleSheet from '../../StyleSheet/StyleSheet';
+import Platform from '../../Utilities/Platform';
+import useMergeRefs from '../../Utilities/useMergeRefs';
 import AndroidSwitchNativeComponent, {
   Commands as AndroidSwitchCommands,
 } from './AndroidSwitchNativeComponent';
 import SwitchNativeComponent, {
   Commands as SwitchCommands,
 } from './SwitchNativeComponent';
-
-import type {ColorValue} from '../../StyleSheet/StyleSheet';
-import type {SyntheticEvent} from '../../Types/CoreEventTypes';
-import type {ViewProps} from '../View/ViewPropTypes';
+import * as React from 'react';
 
 type SwitchChangeEvent = SyntheticEvent<
   $ReadOnly<{|
     value: boolean,
+    target: number,
   |}>,
 >;
 
@@ -185,8 +185,18 @@ const SwitchWithForwardedRef: React.AbstractComponent<
   }, [value, native]);
 
   if (Platform.OS === 'android') {
+    const {accessibilityState} = restProps;
+    const _disabled =
+      disabled != null ? disabled : accessibilityState?.disabled;
+
+    const _accessibilityState =
+      _disabled !== accessibilityState?.disabled
+        ? {...accessibilityState, disabled: _disabled}
+        : accessibilityState;
+
     const platformProps = {
-      enabled: disabled !== true,
+      accessibilityState: _accessibilityState,
+      enabled: _disabled !== true,
       on: value === true,
       style,
       thumbTintColor: thumbColor,

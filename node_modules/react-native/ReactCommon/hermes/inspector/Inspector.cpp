@@ -108,7 +108,7 @@ Inspector::Inspector(
     InspectorObserver &observer,
     bool pauseOnFirstStatement)
     : adapter_(adapter),
-      debugger_(adapter->getDebugger()),
+      debugger_(adapter->getRuntime().getDebugger()),
       observer_(observer),
       executor_(std::make_unique<detail::SerialExecutor>("hermes-inspector")) {
   // TODO (t26491391): make tickleJs a real Hermes runtime API
@@ -589,8 +589,11 @@ void Inspector::executeIfEnabledOnExecutor(
 
   state_->pushPendingFunc(
       [wrappedFunc = std::move(wrappedFunc), promise]() mutable {
-        wrappedFunc();
-        promise->setValue();
+        if (auto userCallbackException = runUserCallback(wrappedFunc)) {
+          promise->setException(*userCallbackException);
+        } else {
+          promise->setValue();
+        }
       });
 }
 
